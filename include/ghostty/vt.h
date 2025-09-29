@@ -11,6 +11,27 @@
  * stable and is definitely going to change. 
  */
 
+/**
+ * @mainpage libghostty-vt - Virtual Terminal Sequence Parser
+ *
+ * libghostty-vt is a C library which implements a modern terminal emulator,
+ * extracted from the [Ghostty](https://ghostty.org) terminal emulator.
+ *
+ * libghostty-vt contains the logic for handling the core parts of a terminal
+ * emulator: parsing terminal escape sequences and maintaining terminal state.
+ * It can handle scrollback, line wrapping, reflow on resize, and more.
+ *
+ * @warning This library is currently in development and the API is not yet stable.
+ * Breaking changes are expected in future versions. Use with caution in production code.
+ *
+ * @section groups_sec API Reference
+ *
+ * The API is organized into the following groups:
+ * - @ref osc "OSC Parser" - Parse OSC (Operating System Command) sequences
+ * - @ref allocator "Memory Management" - Memory management and custom allocators
+ *
+ */
+
 #ifndef GHOSTTY_VT_H
 #define GHOSTTY_VT_H
 
@@ -32,6 +53,8 @@ extern "C" {
  * be used to parse the contents of OSC sequences. This isn't a full VT
  * parser; it is only the OSC parser component. This is useful if you have
  * a parser already and want to only extract and handle OSC sequences.
+ *
+ * @ingroup osc
  */
 typedef struct GhosttyOscParser *GhosttyOscParser;
 
@@ -41,6 +64,8 @@ typedef struct GhosttyOscParser *GhosttyOscParser;
  * This handle represents a parsed OSC (Operating System Command) command.
  * The command can be queried for its type and associated data using
  * `ghostty_osc_command_type` and `ghostty_osc_command_data`.
+ *
+ * @ingroup osc
  */
 typedef struct GhosttyOscCommand *GhosttyOscCommand;
 
@@ -56,6 +81,8 @@ typedef enum {
 
 /**
  * OSC command types.
+ *
+ * @ingroup osc
  */
 typedef enum {
   GHOSTTY_OSC_COMMAND_INVALID = 0,
@@ -81,14 +108,77 @@ typedef enum {
   GHOSTTY_OSC_COMMAND_CONEMU_GUIMACRO = 20,
 } GhosttyOscCommandType;
 
+/**
+ * OSC command data types.
+ * 
+ * These values specify what type of data to extract from an OSC command
+ * using `ghostty_osc_command_data`.
+ *
+ * @ingroup osc
+ */
+typedef enum {
+  /** Invalid data type. Never results in any data extraction. */
+  GHOSTTY_OSC_DATA_INVALID = 0,
+  
+  /** 
+   * Window title string data.
+   *
+   * Valid for: GHOSTTY_OSC_COMMAND_CHANGE_WINDOW_TITLE
+   *
+   * Output type: const char ** (pointer to null-terminated string)
+   *
+   * Lifetime: Valid until the next call to any ghostty_osc_* function with 
+   * the same parser instance. Memory is owned by the parser.
+   */
+  GHOSTTY_OSC_DATA_CHANGE_WINDOW_TITLE_STR = 1,
+} GhosttyOscCommandData;
+
 //-------------------------------------------------------------------
 // Allocator Interface
+
+/** @defgroup allocator Memory Management
+ *
+ * libghostty-vt does require memory allocation for various operations,
+ * but is resilient to allocation failures and will gracefully handle
+ * out-of-memory situations by returning error codes.
+ *
+ * The exact memory management semantics are documented in the relevant
+ * functions and data structures.
+ *
+ * libghostty-vt uses explicit memory allocation via an allocator
+ * interface provided by GhosttyAllocator. The interface is based on the
+ * [Zig](https://ziglang.org) allocator interface, since this has been
+ * shown to be a flexible and powerful interface in practice and enables
+ * a wide variety of allocation strategies.
+ *
+ * **For the common case, you can pass NULL as the allocator for any
+ * function that accepts one,** and libghostty will use a default allocator.
+ * The default allocator will be libc malloc/free if libc is linked. 
+ * Otherwise, a custom allocator is used (currently Zig's SMP allocator)
+ * that doesn't require any external dependencies.
+ *
+ * ## Basic Usage
+ *
+ * For simple use cases, you can ignore this interface entirely by passing NULL
+ * as the allocator parameter to functions that accept one. This will use the
+ * default allocator (typically libc malloc/free, if libc is linked, but
+ * we provide our own default allocator if libc isn't linked).
+ *
+ * To use a custom allocator:
+ * 1. Implement the GhosttyAllocatorVtable function pointers
+ * 2. Create a GhosttyAllocator struct with your vtable and context
+ * 3. Pass the allocator to functions that accept one
+ *
+ * @{
+ */
 
 /**
  * Function table for custom memory allocator operations.
  * 
  * This vtable defines the interface for a custom memory allocator. All
  * function pointers must be valid and non-NULL.
+ *
+ * @ingroup allocator
  *
  * If you're not going to use a custom allocator, you can ignore all of
  * this. All functions that take an allocator pointer allow NULL to use a
@@ -201,6 +291,8 @@ typedef struct {
  * be libc malloc/free if we're linking to libc. If libc isn't linked,
  * a custom allocator is used (currently Zig's SMP allocator).
  *
+ * @ingroup allocator
+ *
  * Usage example:
  * @code
  * GhosttyAllocator allocator = {
@@ -224,8 +316,31 @@ typedef struct {
     const GhosttyAllocatorVtable *vtable;
 } GhosttyAllocator;
 
+/** @} */ // end of allocator group
+
 //-------------------------------------------------------------------
 // Functions
+
+/** @defgroup osc OSC Parser
+ *
+ * OSC (Operating System Command) sequence parser and command handling.
+ *
+ * The parser operates in a streaming fashion, processing input byte-by-byte
+ * to handle OSC sequences that may arrive in fragments across multiple reads.
+ * This interface makes it easy to integrate into most environments and avoids
+ * over-allocating buffers.
+ *
+ * ## Basic Usage
+ *
+ * 1. Create a parser instance with ghostty_osc_new()
+ * 2. Feed bytes to the parser using ghostty_osc_next() 
+ * 3. Finalize parsing with ghostty_osc_end() to get the command
+ * 4. Query command type and extract data using ghostty_osc_command_type()
+ *    and ghostty_osc_command_data()
+ * 5. Free the parser with ghostty_osc_free() when done
+ *
+ * @{
+ */
 
 /**
  * Create a new OSC parser instance.
@@ -315,6 +430,23 @@ GhosttyOscCommand ghostty_osc_end(GhosttyOscParser parser, uint8_t terminator);
  * @return The command type, or GHOSTTY_OSC_COMMAND_INVALID if command is NULL
  */
 GhosttyOscCommandType ghostty_osc_command_type(GhosttyOscCommand command);
+
+/**
+ * Extract data from an OSC command.
+ * 
+ * Extracts typed data from the given OSC command based on the specified
+ * data type. The output pointer must be of the appropriate type for the
+ * requested data kind. Valid command types, output types, and memory
+ * safety information are documented in the `GhosttyOscCommandData` enum.
+ *
+ * @param command The OSC command handle to query (may be NULL)
+ * @param data The type of data to extract
+ * @param out Pointer to store the extracted data (type depends on data parameter)
+ * @return true if data extraction was successful, false otherwise
+ */
+bool ghostty_osc_command_data(GhosttyOscCommand command, GhosttyOscCommandData data, void *out);
+
+/** @} */ // end of osc group
 
 #ifdef __cplusplus
 }

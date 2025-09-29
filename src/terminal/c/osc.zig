@@ -49,6 +49,51 @@ pub fn commandType(command_: Command) callconv(.c) osc.Command.Key {
     return command.*;
 }
 
+/// C: GhosttyOscCommandData
+pub const CommandData = enum(c_int) {
+    invalid = 0,
+    change_window_title_str = 1,
+
+    /// Output type expected for querying the data of the given kind.
+    pub fn OutType(comptime self: CommandData) type {
+        return switch (self) {
+            .invalid => void,
+            .change_window_title_str => [*:0]const u8,
+        };
+    }
+};
+
+pub fn commandData(
+    command_: Command,
+    data: CommandData,
+    out: ?*anyopaque,
+) callconv(.c) bool {
+    return switch (data) {
+        inline else => |comptime_data| commandDataTyped(
+            command_,
+            comptime_data,
+            @ptrCast(@alignCast(out)),
+        ),
+    };
+}
+
+fn commandDataTyped(
+    command_: Command,
+    comptime data: CommandData,
+    out: *data.OutType(),
+) bool {
+    const command = command_.?;
+    switch (data) {
+        .invalid => return false,
+        .change_window_title_str => switch (command.*) {
+            .change_window_title => |v| out.* = v.ptr,
+            else => return false,
+        },
+    }
+
+    return true;
+}
+
 test "alloc" {
     const testing = std.testing;
     var p: Parser = undefined;
@@ -64,7 +109,7 @@ test "command type null" {
     try testing.expectEqual(.invalid, commandType(null));
 }
 
-test "command type" {
+test "change window title" {
     const testing = std.testing;
     var p: Parser = undefined;
     try testing.expectEqual(Result.success, new(
@@ -73,9 +118,15 @@ test "command type" {
     ));
     defer free(p);
 
+    // Parse it
     next(p, '0');
     next(p, ';');
     next(p, 'a');
     const cmd = end(p, 0);
     try testing.expectEqual(.change_window_title, commandType(cmd));
+
+    // Extract the title
+    var title: [*:0]const u8 = undefined;
+    try testing.expect(commandData(cmd, .change_window_title_str, @ptrCast(&title)));
+    try testing.expectEqualStrings("a", std.mem.span(title));
 }

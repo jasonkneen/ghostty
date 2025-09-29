@@ -7,6 +7,7 @@ pub const osc_reset = osc.reset;
 pub const osc_next = osc.next;
 pub const osc_end = osc.end;
 pub const osc_command_type = osc.commandType;
+pub const osc_command_data = osc.commandData;
 
 test {
     _ = osc;

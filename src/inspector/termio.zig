@@ -197,7 +197,9 @@ pub const VTEvent = struct {
     ) !void {
         switch (@TypeOf(v)) {
             void => {},
-            []const u8 => try md.put("data", try alloc.dupeZ(u8, v)),
+            []const u8,
+            [:0]const u8,
+            => try md.put("data", try alloc.dupeZ(u8, v)),
             else => |T| switch (@typeInfo(T)) {
                 .@"struct" => |info| inline for (info.fields) |field| {
                     try encodeMetadataSingle(
@@ -284,7 +286,9 @@ pub const VTEvent = struct {
                     try std.fmt.allocPrintZ(alloc, "{}", .{value}),
                 ),
 
-                []const u8 => try md.put(key, try alloc.dupeZ(u8, value)),
+                []const u8,
+                [:0]const u8,
+                => try md.put(key, try alloc.dupeZ(u8, value)),
 
                 else => |T| {
                     @compileLog(T);

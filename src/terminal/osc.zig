@@ -26,19 +26,19 @@ pub const Command = union(Key) {
 
     /// Set the window title of the terminal
     ///
-    /// If title mode 0  is set text is expect to be hex encoded (i.e. utf-8
+    /// If title mode 0 is set text is expect to be hex encoded (i.e. utf-8
     /// with each code unit further encoded with two hex digits).
     ///
     /// If title mode 2 is set or the terminal is setup for unconditional
     /// utf-8 titles text is interpreted as utf-8. Else text is interpreted
     /// as latin1.
-    change_window_title: []const u8,
+    change_window_title: [:0]const u8,
 
     /// Set the icon of the terminal window. The name of the icon is not
     /// well defined, so this is currently ignored by Ghostty at the time
     /// of writing this. We just parse it so that we don't get parse errors
     /// in the log.
-    change_window_icon: []const u8,
+    change_window_icon: [:0]const u8,
 
     /// First do a fresh-line. Then start a new command, and enter prompt mode:
     /// Subsequent text (until a OSC "133;B" or OSC "133;I" command) is a
@@ -54,7 +54,7 @@ pub const Command = union(Key) {
     /// - secondary: a non-editable continuation line
     /// - right: a right-aligned prompt that may need adjustment during reflow
     prompt_start: struct {
-        aid: ?[]const u8 = null,
+        aid: ?[:0]const u8 = null,
         kind: enum { primary, continuation, secondary, right } = .primary,
         redraw: bool = true,
     },
@@ -96,7 +96,7 @@ pub const Command = union(Key) {
     /// contents is set on the clipboard.
     clipboard_contents: struct {
         kind: u8,
-        data: []const u8,
+        data: [:0]const u8,
     },
 
     /// OSC 7. Reports the current working directory of the shell. This is
@@ -106,7 +106,7 @@ pub const Command = union(Key) {
     report_pwd: struct {
         /// The reported pwd value. This is not checked for validity. It should
         /// be a file URL but it is up to the caller to utilize this value.
-        value: []const u8,
+        value: [:0]const u8,
     },
 
     /// OSC 22. Set the mouse shape. There doesn't seem to be a standard
@@ -114,7 +114,7 @@ pub const Command = union(Key) {
     /// are moving towards using the W3C CSS cursor names. For OSC parsing,
     /// we just parse whatever string is given.
     mouse_shape: struct {
-        value: []const u8,
+        value: [:0]const u8,
     },
 
     /// OSC color operations to set, reset, or report color settings. Some OSCs
@@ -138,14 +138,14 @@ pub const Command = union(Key) {
 
     /// Show a desktop notification (OSC 9 or OSC 777)
     show_desktop_notification: struct {
-        title: []const u8,
-        body: []const u8,
+        title: [:0]const u8,
+        body: [:0]const u8,
     },
 
     /// Start a hyperlink (OSC 8)
     hyperlink_start: struct {
-        id: ?[]const u8 = null,
-        uri: []const u8,
+        id: ?[:0]const u8 = null,
+        uri: [:0]const u8,
     },
 
     /// End a hyperlink (OSC 8)
@@ -157,12 +157,12 @@ pub const Command = union(Key) {
     },
 
     /// ConEmu show GUI message box (OSC 9;2)
-    conemu_show_message_box: []const u8,
+    conemu_show_message_box: [:0]const u8,
 
     /// ConEmu change tab title (OSC 9;3)
     conemu_change_tab_title: union(enum) {
         reset,
-        value: []const u8,
+        value: [:0]const u8,
     },
 
     /// ConEmu progress report (OSC 9;4)
@@ -172,7 +172,7 @@ pub const Command = union(Key) {
     conemu_wait_input,
 
     /// ConEmu GUI macro (OSC 9;6)
-    conemu_guimacro: []const u8,
+    conemu_guimacro: [:0]const u8,
 
     pub const Key = LibEnum(
         if (build_options.c_abi) .c else .zig,
@@ -305,7 +305,7 @@ pub const Parser = struct {
     /// Temporary state that is dependent on the current state.
     temp_state: union {
         /// Current string parameter being populated
-        str: *[]const u8,
+        str: *[:0]const u8,
 
         /// Current numeric parameter being populated
         num: u16,
@@ -498,7 +498,10 @@ pub const Parser = struct {
         // If our buffer is full then we're invalid, so we set our state
         // accordingly and indicate the sequence is incomplete so that we
         // don't accidentally issue a command when ending.
-        if (self.buf_idx >= self.buf.len) {
+        //
+        // We always keep space for 1 byte at the end to null-terminate
+        // values.
+        if (self.buf_idx >= self.buf.len - 1) {
             if (self.state != .invalid) {
                 log.warn(
                     "OSC sequence too long (> {d}), ignoring. state={}",
@@ -1037,7 +1040,8 @@ pub const Parser = struct {
 
             .notification_title => switch (c) {
                 ';' => {
-                    self.command.show_desktop_notification.title = self.buf[self.buf_start .. self.buf_idx - 1];
+                    self.buf[self.buf_idx - 1] = 0;
+                    self.command.show_desktop_notification.title = self.buf[self.buf_start .. self.buf_idx - 1 :0];
                     self.temp_state = .{ .str = &self.command.show_desktop_notification.body };
                     self.buf_start = self.buf_idx;
                     self.state = .string;
@@ -1406,7 +1410,8 @@ pub const Parser = struct {
     fn endHyperlink(self: *Parser) void {
         switch (self.command) {
             .hyperlink_start => |*v| {
-                const value = self.buf[self.buf_start..self.buf_idx];
+                self.buf[self.buf_idx] = 0;
+                const value = self.buf[self.buf_start..self.buf_idx :0];
                 if (v.id == null and value.len == 0) {
                     self.command = .{ .hyperlink_end = {} };
                     return;
@@ -1420,10 +1425,12 @@ pub const Parser = struct {
     }
 
     fn endHyperlinkOptionValue(self: *Parser) void {
-        const value = if (self.buf_start == self.buf_idx)
+        const value: [:0]const u8 = if (self.buf_start == self.buf_idx)
             ""
-        else
-            self.buf[self.buf_start .. self.buf_idx - 1];
+        else buf: {
+            self.buf[self.buf_idx - 1] = 0;
+            break :buf self.buf[self.buf_start .. self.buf_idx - 1 :0];
+        };
 
         if (mem.eql(u8, self.temp_state.key, "id")) {
             switch (self.command) {
@@ -1438,7 +1445,11 @@ pub const Parser = struct {
     }
 
     fn endSemanticOptionValue(self: *Parser) void {
-        const value = self.buf[self.buf_start..self.buf_idx];
+        const value = value: {
+            self.buf[self.buf_idx] = 0;
+            defer self.buf_idx += 1;
+            break :value self.buf[self.buf_start..self.buf_idx :0];
+        };
 
         if (mem.eql(u8, self.temp_state.key, "aid")) {
             switch (self.command) {
@@ -1495,7 +1506,9 @@ pub const Parser = struct {
     }
 
     fn endString(self: *Parser) void {
-        self.temp_state.str.* = self.buf[self.buf_start..self.buf_idx];
+        self.buf[self.buf_idx] = 0;
+        defer self.buf_idx += 1;
+        self.temp_state.str.* = self.buf[self.buf_start..self.buf_idx :0];
     }
 
     fn endConEmuSleepValue(self: *Parser) void {
@@ -1589,8 +1602,15 @@ pub const Parser = struct {
     }
 
     fn endAllocableString(self: *Parser) void {
+        const alloc = self.alloc.?;
         const list = self.buf_dynamic.?;
-        self.temp_state.str.* = list.items;
+        list.append(alloc, 0) catch {
+            log.warn("allocation failed on allocable string termination", .{});
+            self.temp_state.str.* = "";
+            return;
+        };
+
+        self.temp_state.str.* = list.items[0 .. list.items.len - 1 :0];
     }
 
     /// End the sequence and return the command, if any. If the return value
@@ -1972,6 +1992,36 @@ test "OSC: longer than buffer" {
     const input = "0;" ++ "a" ** (Parser.MAX_BUF + 2);
     for (input) |ch| p.next(ch);
 
+    try testing.expect(p.end(null) == null);
+    try testing.expect(p.complete == false);
+}
+
+test "OSC: one shorter than buffer length" {
+    const testing = std.testing;
+
+    var p: Parser = .init();
+
+    const prefix = "0;";
+    const title = "a" ** (Parser.MAX_BUF - prefix.len - 1);
+    const input = prefix ++ title;
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end(null).?.*;
+    try testing.expect(cmd == .change_window_title);
+    try testing.expectEqualStrings(title, cmd.change_window_title);
+}
+
+test "OSC: exactly at buffer length" {
+    const testing = std.testing;
+
+    var p: Parser = .init();
+
+    const prefix = "0;";
+    const title = "a" ** (Parser.MAX_BUF - prefix.len);
+    const input = prefix ++ title;
+    for (input) |ch| p.next(ch);
+
+    // This should be null because we always reserve space for a null terminator.
     try testing.expect(p.end(null) == null);
     try testing.expect(p.complete == false);
 }
