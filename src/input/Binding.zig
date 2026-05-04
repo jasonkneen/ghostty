@@ -347,6 +347,31 @@ pub const Action = union(enum) {
     reset,
 
     /// Copy the selected text to the clipboard.
+    ///
+    /// Valid arguments:
+    ///
+    ///   - `plain`
+    ///
+    ///     Copy the selection as plain text only.
+    ///
+    ///   - `vt`
+    ///
+    ///     Copy the selection as plain text, preserving terminal escape
+    ///     sequences (such as colors and styles).
+    ///
+    ///   - `html`
+    ///
+    ///     Copy the selection as HTML, preserving colors and styles as
+    ///     HTML markup.
+    ///
+    ///   - `mixed` (default)
+    ///
+    ///     Place multiple representations on the clipboard at once
+    ///     (e.g. plain text and HTML), each tagged with its content type
+    ///     so the receiving OS or application can pick the most appropriate
+    ///     representation when pasting.
+    ///
+    /// If no argument is given, defaults to `mixed`.
     copy_to_clipboard: CopyToClipboard,
 
     /// Paste the contents of the default clipboard.
