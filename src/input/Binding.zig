@@ -711,7 +711,21 @@ pub const Action = union(enum) {
     /// Close the current tab and all splits therein, close all other tabs, or
     /// close every tab to the right of the current one depending on the mode.
     ///
-    /// If the mode is not specified, defaults to closing the current tab.
+    /// Valid arguments:
+    ///
+    ///   - `this` (default)
+    ///
+    ///     Close the current tab and all splits within it.
+    ///
+    ///   - `other`
+    ///
+    ///     Close every tab in the current window except the current tab.
+    ///
+    ///   - `right`
+    ///
+    ///     Close every tab to the right of the current tab.
+    ///
+    /// If no argument is given, defaults to `this`.
     ///
     /// This might trigger a close confirmation popup, depending on the value
     /// of the `confirm-close-surface` configuration setting.
