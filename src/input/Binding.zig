@@ -348,7 +348,7 @@ pub const Action = union(enum) {
 
     /// Copy the selected text to the clipboard.
     ///
-    /// Valid arguments:
+    /// Valid values:
     ///
     ///   - `plain`
     ///
@@ -370,8 +370,6 @@ pub const Action = union(enum) {
     ///     (e.g. plain text and HTML), each tagged with its content type
     ///     so the receiving OS or application can pick the most appropriate
     ///     representation when pasting.
-    ///
-    /// If no argument is given, defaults to `mixed`.
     copy_to_clipboard: CopyToClipboard,
 
     /// Paste the contents of the default clipboard.
@@ -424,7 +422,7 @@ pub const Action = union(enum) {
     /// Navigate the search results. If there is no active search, this
     /// is not performed.
     ///
-    /// Valid arguments: `previous`, `next`.
+    /// Valid values: `previous`, `next`.
     navigate_search: NavigateSearch,
 
     /// Start a search if it isn't started already. This doesn't set any
@@ -708,10 +706,9 @@ pub const Action = union(enum) {
     /// of the `confirm-close-surface` configuration setting.
     close_surface,
 
-    /// Close the current tab and all splits therein, close all other tabs, or
-    /// close every tab to the right of the current one depending on the mode.
+    /// Close the specified tabs and all splits therein.
     ///
-    /// Valid arguments:
+    /// Valid values:
     ///
     ///   - `this` (default)
     ///
@@ -724,8 +721,6 @@ pub const Action = union(enum) {
     ///   - `right`
     ///
     ///     Close every tab to the right of the current tab.
-    ///
-    /// If no argument is given, defaults to `this`.
     ///
     /// This might trigger a close confirmation popup, depending on the value
     /// of the `confirm-close-surface` configuration setting.
